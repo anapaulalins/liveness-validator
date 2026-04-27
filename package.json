@@ -1,6 +1,6 @@
 {
   "name": "liveness-validator",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
@@ -16,10 +16,12 @@
   "license": "ISC",
   "description": "",
   "peerDependencies": {
-    "@mediapipe/tasks-vision": ">=0.10.0"
+    "@mediapipe/tasks-vision": ">=0.10.0",
+    "face-api.js": ">=0.22.0"
   },
   "devDependencies": {
     "@mediapipe/tasks-vision": "^0.10.18",
+    "face-api.js": "^0.22.2",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3"
   }
