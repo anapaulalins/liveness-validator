@@ -1,14 +1,14 @@
 {
   "name": "liveness-validator",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": [
     "dist"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --dts --format esm,cjs",
-    "dev": "tsup src/index.ts --watch --dts --format esm,cjs",
+    "build": "tsup src/index.ts --dts --format esm,cjs --external @mediapipe/tasks-vision --external face-api.js",
+    "dev": "tsup src/index.ts --watch --dts --format esm,cjs --external @mediapipe/tasks-vision --external face-api.js",
     "prepare": "npm run build"
   },
   "keywords": [],
@@ -20,13 +20,9 @@
     "face-api.js": ">=0.22.0"
   },
   "devDependencies": {
-    "@mediapipe/tasks-vision": "^0.10.18",
+    "@mediapipe/tasks-vision": "0.10.18",
     "face-api.js": "^0.22.2",
     "tsup": "^8.5.1",
     "typescript": "^6.0.3"
-  },
-  "dependencies": {
-    "@mediapipe/tasks-vision": "0.10.18",
-    "face-api.js": "^0.22.2"
   }
 }
