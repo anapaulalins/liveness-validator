@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --dts --format esm,cjs",
+    "dev": "tsup src/index.ts --watch --dts --format esm,cjs",
     "prepare": "npm run build"
   },
   "keywords": [],

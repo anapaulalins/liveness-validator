@@ -211,3 +211,7 @@ export class MediaPipeLivenessValidator {
     this.successTimestamp = null;
   }
 }
+
+export function createLivenessValidator() {
+  return new MediaPipeLivenessValidator();
+}
