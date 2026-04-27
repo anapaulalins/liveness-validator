@@ -1,5 +1,4 @@
 import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
-
 export class MediaPipeEngine {
   private landmarker: FaceLandmarker | null = null;
 
