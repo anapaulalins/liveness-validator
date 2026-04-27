@@ -1,4 +1,30 @@
-export const calculateSmartCrop = (face, vW, vH, targetRatio, ipad) => {
+type FaceBox = {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type CropConfig = {
+  cropExpandTop?: number;
+  cropExpandBottom?: number;
+  cropExpandSide?: number;
+};
+
+type CropResult = {
+  cropX: number;
+  cropY: number;
+  cropWidth: number;
+  cropHeight: number;
+};
+
+export const calculateSmartCrop = (
+  face: FaceBox,
+  vW: number,
+  vH: number,
+  targetRatio: number,
+  ipad?: CropConfig,
+): CropResult => {
   const x = face.x * vW;
   const y = face.y * vH;
   const w = face.width * vW;
