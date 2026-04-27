@@ -1,8 +1,6 @@
 import { FaceApiEngine } from "../engines/faceapi";
 import { MediaPipeEngine } from "../engines/mediapipe";
 
-type EngineType = "mediapipe" | "faceapi";
-
 export class FaceEngineManager {
   private mediapipe?: MediaPipeEngine;
   private faceapi?: FaceApiEngine;
@@ -11,13 +9,14 @@ export class FaceEngineManager {
     private config: {
       useMediaPipe?: boolean;
       useFaceApi?: boolean;
+      wasmUrl?: string;
     },
   ) {}
 
   async init() {
     if (this.config.useMediaPipe) {
       this.mediapipe = new MediaPipeEngine();
-      await this.mediapipe.init();
+      await this.mediapipe.init(this.config.wasmUrl);
     }
 
     if (this.config.useFaceApi) {
