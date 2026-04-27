@@ -2,6 +2,7 @@
 export {
   MediaPipeLivenessValidator,
   LivenessStatus,
+  createLivenessValidator,
 } from "./core/MediaPipeLivenessValidator";
 
 // engines
