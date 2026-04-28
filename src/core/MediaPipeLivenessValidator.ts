@@ -11,6 +11,8 @@ export class MediaPipeLivenessValidator {
   private successTimestamp: number | null = null;
   private stabilizationTime = 900;
 
+  constructor(private mirrored = true) {}
+
   private getDistance(p1: any, p2: any) {
     return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
   }
@@ -95,30 +97,55 @@ export class MediaPipeLivenessValidator {
 
   private isHeadTurned(landmarks: any[], direction: "left" | "right") {
     const nose = landmarks[1];
-    const leftFace = landmarks[234]; // Lado "0" do eixo X na imagem
-    const rightFace = landmarks[454]; // Lado "1" do eixo X na imagem
+    const leftFace = landmarks[234];
+    const rightFace = landmarks[454];
 
     const distLeft = this.getDistance(nose, leftFace);
     const distRight = this.getDistance(nose, rightFace);
 
-    // 🔥 Reduzi o threshold de 1.35 para 1.25.
-    // 1.35 é muito rígido para Webcams comuns e faz o usuário ter que virar demais o pescoço.
     const threshold = 1.25;
 
-    // 💡 INVERSÃO PARA CÂMERA ESPELHADA (Mirrored):
-    // Na sua tela: Esquerda Visual = Lado Direito da Imagem (454)
-    // Na sua tela: Direita Visual = Lado Esquerdo da Imagem (234)
+    // Com câmera espelhada (invites): esquerda visual = lado direito da imagem
+    // Sem espelhamento (totem): esquerda visual = lado esquerdo da imagem
+    const effectiveDirection = this.mirrored
+      ? direction
+      : direction === "left"
+        ? "right"
+        : "left";
 
-    if (direction === "left") {
-      // Para o usuário virar para a esquerda visual, o nariz deve chegar perto do ponto 454
-      // Portanto, a distância para o ponto 234 (distLeft) deve ser maior.
+    if (effectiveDirection === "left") {
       return distLeft / distRight > threshold;
     }
 
-    // Para o usuário virar para a direita visual, o nariz deve chegar perto do ponto 234
-    // Portanto, a distância para o ponto 454 (distRight) deve ser maior.
     return distRight / distLeft > threshold;
   }
+
+  // private isHeadTurned(landmarks: any[], direction: "left" | "right") {
+  //   const nose = landmarks[1];
+  //   const leftFace = landmarks[234]; // Lado "0" do eixo X na imagem
+  //   const rightFace = landmarks[454]; // Lado "1" do eixo X na imagem
+
+  //   const distLeft = this.getDistance(nose, leftFace);
+  //   const distRight = this.getDistance(nose, rightFace);
+
+  //   // 🔥 Reduzi o threshold de 1.35 para 1.25.
+  //   // 1.35 é muito rígido para Webcams comuns e faz o usuário ter que virar demais o pescoço.
+  //   const threshold = 1.25;
+
+  //   // 💡 INVERSÃO PARA CÂMERA ESPELHADA (Mirrored):
+  //   // Na sua tela: Esquerda Visual = Lado Direito da Imagem (454)
+  //   // Na sua tela: Direita Visual = Lado Esquerdo da Imagem (234)
+
+  //   if (direction === "left") {
+  //     // Para o usuário virar para a esquerda visual, o nariz deve chegar perto do ponto 454
+  //     // Portanto, a distância para o ponto 234 (distLeft) deve ser maior.
+  //     return distLeft / distRight > threshold;
+  //   }
+
+  //   // Para o usuário virar para a direita visual, o nariz deve chegar perto do ponto 234
+  //   // Portanto, a distância para o ponto 454 (distRight) deve ser maior.
+  //   return distRight / distLeft > threshold;
+  // }
 
   private checkGeometricRules(landmarks: any[]) {
     if (!this.isFaceCentered(landmarks))
@@ -212,6 +239,6 @@ export class MediaPipeLivenessValidator {
   }
 }
 
-export function createLivenessValidator() {
-  return new MediaPipeLivenessValidator();
+export function createLivenessValidator(config?: { mirrored?: boolean }) {
+  return new MediaPipeLivenessValidator(config?.mirrored ?? true);
 }
