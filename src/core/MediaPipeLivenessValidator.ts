@@ -71,7 +71,7 @@ export class MediaPipeLivenessValidator {
   }
 
   private validateFaceVisibility(landmarks: any[], blendshapes?: any[]) {
-    if (!blendshapes) return { isValid: true };
+    if (!blendshapes) return { isValid: true, feedback: "stayStill" };
 
     const getDistance = (p1: any, p2: any) =>
       Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
