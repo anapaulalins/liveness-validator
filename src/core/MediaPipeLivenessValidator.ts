@@ -72,24 +72,15 @@ export class MediaPipeLivenessValidator {
 
   private validateFaceVisibility(landmarks: any[], blendshapes?: any[]) {
     if (!blendshapes) return { isValid: true, feedback: "stayStill" };
+    const eyeBlinkLeft = blendshapes[9].score;
+    const eyeBlinkRight = blendshapes[10].score;
+    const eyeWideLeft = blendshapes[21].score;
+    const eyeWideRight = blendshapes[22].score;
 
-    const eyeBlinkLeft = blendshapes[9]?.score ?? 0;
-    const eyeBlinkRight = blendshapes[10]?.score ?? 0;
-
-    const eyeWideLeft = blendshapes[21]?.score ?? 0;
-    const eyeWideRight = blendshapes[22]?.score ?? 0;
-
-    const eyeSquintLeft = blendshapes[19]?.score ?? 0;
-    const eyeSquintRight = blendshapes[20]?.score ?? 0;
+    const leftEyeClosed = eyeBlinkLeft > 0.1 && eyeWideLeft < 0.1;
+    const rightEyeClosed = eyeBlinkRight > 0.1 && eyeWideRight < 0.1;
 
     const mouthPucker = blendshapes[38]?.score ?? 0;
-
-    // 🔥 REGRA MAIS ROBUSTA
-    const leftEyeClosed =
-      eyeBlinkLeft > 0.45 && eyeWideLeft < 0.12 && eyeSquintLeft > 0.2;
-
-    const rightEyeClosed =
-      eyeBlinkRight > 0.45 && eyeWideRight < 0.12 && eyeSquintRight > 0.2;
 
     if (leftEyeClosed || rightEyeClosed) {
       return {
@@ -98,8 +89,7 @@ export class MediaPipeLivenessValidator {
       };
     }
 
-    // 👄 boca estranha / oclusão parcial
-    if (mouthPucker < 0.05) {
+    if (mouthPucker < 0.08) {
       return {
         isValid: false,
         feedback: "faceOccluded",
