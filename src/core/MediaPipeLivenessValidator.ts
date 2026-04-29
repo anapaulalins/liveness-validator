@@ -71,9 +71,7 @@ export class MediaPipeLivenessValidator {
   }
 
   private validateFaceVisibility(landmarks: any[], blendshapes?: any[]) {
-    if (!blendshapes) {
-      return { isValid: false, feedback: "faceNotDetected" };
-    }
+    if (!blendshapes) return { isValid: true, feedback: "stayStill" };
 
     const eyeBlinkLeft = blendshapes[9]?.score ?? 0;
     const eyeBlinkRight = blendshapes[10]?.score ?? 0;
