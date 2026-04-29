@@ -71,35 +71,27 @@ export class MediaPipeLivenessValidator {
   }
 
   private validateFaceVisibility(landmarks: any[], blendshapes?: any[]) {
-    if (!blendshapes) return { isValid: true, feedback: "stayStill" };
+    if (!blendshapes) {
+      return { isValid: false, feedback: "faceNotDetected" };
+    }
 
-    const getDistance = (p1: any, p2: any) =>
-      Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
+    const eyeBlinkLeft = blendshapes[9]?.score ?? 0;
+    const eyeBlinkRight = blendshapes[10]?.score ?? 0;
 
-    const leftEyeTop = landmarks[159];
-    const leftEyeBottom = landmarks[145];
+    const eyeWideLeft = blendshapes[21]?.score ?? 0;
+    const eyeWideRight = blendshapes[22]?.score ?? 0;
 
-    const rightEyeTop = landmarks[386];
-    const rightEyeBottom = landmarks[374];
+    const eyeSquintLeft = blendshapes[19]?.score ?? 0;
+    const eyeSquintRight = blendshapes[20]?.score ?? 0;
 
-    const eyeWidth = getDistance(landmarks[33], landmarks[263]);
+    const mouthPucker = blendshapes[38]?.score ?? 0;
 
-    const leftEyeRatio = getDistance(leftEyeTop, leftEyeBottom) / eyeWidth;
-    const rightEyeRatio = getDistance(rightEyeTop, rightEyeBottom) / eyeWidth;
-
-    const eyeBlinkLeft = blendshapes[9]?.score;
-    const eyeBlinkRight = blendshapes[10]?.score;
-
-    const eyeWideLeft = blendshapes[21]?.score;
-    const eyeWideRight = blendshapes[22]?.score;
-
-    const mouthPucker = blendshapes[38]?.score;
-
+    // 🔥 REGRA MAIS ROBUSTA
     const leftEyeClosed =
-      leftEyeRatio < 0.02 && eyeBlinkLeft > 0.4 && eyeWideLeft < 0.08;
+      eyeBlinkLeft > 0.45 && eyeWideLeft < 0.12 && eyeSquintLeft > 0.2;
 
     const rightEyeClosed =
-      rightEyeRatio < 0.02 && eyeBlinkRight > 0.4 && eyeWideRight < 0.08;
+      eyeBlinkRight > 0.45 && eyeWideRight < 0.12 && eyeSquintRight > 0.2;
 
     if (leftEyeClosed || rightEyeClosed) {
       return {
@@ -108,14 +100,18 @@ export class MediaPipeLivenessValidator {
       };
     }
 
-    if (mouthPucker !== undefined && mouthPucker < 0.06) {
+    // 👄 boca estranha / oclusão parcial
+    if (mouthPucker < 0.05) {
       return {
         isValid: false,
         feedback: "faceOccluded",
       };
     }
 
-    return { isValid: true };
+    return {
+      isValid: true,
+      feedback: "ok",
+    };
   }
 
   private getFaceSize(landmarks: any[]) {
