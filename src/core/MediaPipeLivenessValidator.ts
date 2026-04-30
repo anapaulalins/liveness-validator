@@ -80,19 +80,12 @@ export class MediaPipeLivenessValidator {
     const leftEyeClosed = eyeBlinkLeft > 0.1 && eyeWideLeft < 0.1;
     const rightEyeClosed = eyeBlinkRight > 0.1 && eyeWideRight < 0.1;
 
-    const mouthPucker = blendshapes[38]?.score ?? 0;
+    // const mouthPucker = blendshapes[38]?.score ?? 0;
 
     if (leftEyeClosed || rightEyeClosed) {
       return {
         isValid: false,
         feedback: "keepEyesOpen",
-      };
-    }
-
-    if (mouthPucker < 0.08) {
-      return {
-        isValid: false,
-        feedback: "faceOccluded",
       };
     }
 
@@ -256,12 +249,12 @@ export class MediaPipeLivenessValidator {
     blendshapes?: any[],
   ) {
     if (!faceLivenessEnabled) {
-      const visibility = this.validateFaceVisibility(landmarks, blendshapes);
+      // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
 
-      if (!visibility.isValid) {
-        this.successTimestamp = null;
-        return visibility;
-      }
+      // if (!visibility.isValid) {
+      //   this.successTimestamp = null;
+      //   return visibility;
+      // }
 
       return this.validateBase(landmarks);
     }
