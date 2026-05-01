@@ -6,33 +6,87 @@ export enum LivenessStatus {
   SUCCESS = "success",
 }
 
+interface LivenessValidatorConfig {
+  mirrored?: boolean;
+  faceSize?: {
+    min: number;
+    max: number;
+  };
+}
+
 export class MediaPipeLivenessValidator {
   private currentStatus: LivenessStatus = LivenessStatus.CENTER_FACE;
   private successTimestamp: number | null = null;
   private stabilizationTime = 900;
-
   private sequence: ("left" | "right")[] = [];
   private stepIndex = 0;
+  private mirrored: boolean;
+  private faceSizeMin: number;
+  private faceSizeMax: number;
 
-  constructor(private mirrored = true) {}
+  constructor(config: LivenessValidatorConfig = {}) {
+    this.mirrored = config.mirrored ?? true;
+    // invites: 0.25–0.4 funciona bem
+    // totem: câmera mais distante → thresholds menores
+    this.faceSizeMin = config.faceSize?.min ?? 0.25;
+    this.faceSizeMax = config.faceSize?.max ?? 0.4;
+  }
 
   private getDistance(p1: any, p2: any) {
     return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
   }
 
-  private generateSequence() {
-    const options: ("left" | "right")[] = ["left", "right"];
-    const length = Math.random() > 0.5 ? 2 : 3;
+  // private generateSequence() {
+  //   const options: ("left" | "right")[] = ["left", "right"];
+  //   const length = Math.random() > 0.5 ? 2 : 3;
 
+  //   this.sequence = [];
+
+  //   for (let i = 0; i < length; i++) {
+  //     let next = options[Math.floor(Math.random() * options.length)];
+
+  //     // evita repetir o mesmo movimento seguido
+  //     if (i > 0 && next === this.sequence[i - 1]) {
+  //       next = next === "left" ? "right" : "left";
+  //     }
+
+  //     this.sequence.push(next);
+  //   }
+
+  //   this.stepIndex = 0;
+  // }
+
+  private generateSequence() {
+    const length = 2 + Math.floor(Math.random() * 2); // 2 ou 3
     this.sequence = [];
 
-    for (let i = 0; i < length; i++) {
-      let next = options[Math.floor(Math.random() * options.length)];
+    // Garante que começa aleatório mas distribui left/right de forma balanceada
+    let leftCount = 0;
+    let rightCount = 0;
 
-      // evita repetir o mesmo movimento seguido
+    for (let i = 0; i < length; i++) {
+      const remaining = length - i;
+      const leftRemaining = Math.floor(length / 2) - leftCount;
+      const rightRemaining = Math.ceil(length / 2) - rightCount;
+
+      let next: "left" | "right";
+
+      // Força balanceamento se um lado já foi muito usado
+      if (leftRemaining <= 0) {
+        next = "right";
+      } else if (rightRemaining <= 0) {
+        next = "left";
+      } else {
+        next = Math.random() > 0.5 ? "left" : "right";
+      }
+
+      // Nunca repete o mesmo lado consecutivamente
       if (i > 0 && next === this.sequence[i - 1]) {
         next = next === "left" ? "right" : "left";
       }
+
+      if (next === "left") leftCount++;
+      else rightCount++;
 
       this.sequence.push(next);
     }
@@ -102,10 +156,15 @@ export class MediaPipeLivenessValidator {
     return this.getDistance(leftFace, rightFace);
   }
 
+  // private isFaceCloseEnough(landmarks: any[]) {
+  //   const faceSize = this.getFaceSize(landmarks);
+
+  //   return faceSize > 0.25 && faceSize < 0.4;
+  // }
+
   private isFaceCloseEnough(landmarks: any[]) {
     const faceSize = this.getFaceSize(landmarks);
-
-    return faceSize > 0.25 && faceSize < 0.4;
+    return faceSize > this.faceSizeMin && faceSize < this.faceSizeMax;
   }
 
   private isHeadFacingForward(landmarks: any[]) {
@@ -307,6 +366,6 @@ export class MediaPipeLivenessValidator {
   }
 }
 
-export function createLivenessValidator(config?: { mirrored?: boolean }) {
-  return new MediaPipeLivenessValidator(config?.mirrored ?? true);
+export function createLivenessValidator(config?: LivenessValidatorConfig) {
+  return new MediaPipeLivenessValidator(config);
 }
