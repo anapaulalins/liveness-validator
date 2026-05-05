@@ -6,7 +6,7 @@ export {
 } from "./core/MediaPipeLivenessValidator";
 
 // engines
-export { FaceApiEngine } from "./engines/faceapi";
+// export { FaceApiEngine } from "./engines/faceapi";
 export { MediaPipeEngine } from "./engines/mediapipe";
 
 // utils (validações)
