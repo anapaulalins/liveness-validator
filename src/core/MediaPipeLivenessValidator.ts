@@ -273,21 +273,9 @@ export class MediaPipeLivenessValidator {
     return turnThresholdOk && zMovementOk && this.is3DFace(landmarks);
   }
 
-  private checkGeometricRules(landmarks: any[]) {
-    if (!this.isFaceCentered(landmarks))
-      return { isValid: false, feedback: "alignYourFaceCircle" };
-    if (!this.isFaceCloseEnough(landmarks))
-      return { isValid: false, feedback: "moveCloser" };
-    if (!this.isHeadFacingForward(landmarks))
-      return { isValid: false, feedback: "face.headNotLeveled" };
-    if (this.isFaceTiltedDown(landmarks))
-      return { isValid: false, feedback: "dontTiltDown" };
-
-    return { isValid: true, feedback: "ok" };
-  }
-
   private validateBase(landmarks: any[]) {
-    const rules = this.checkGeometricRules(landmarks);
+    // Passamos 'false' pois nesta fase o usuário deve estar parado/estático
+    const rules = this.checkGeometricRules(landmarks, false);
 
     if (!rules.isValid) {
       this.successTimestamp = null;
@@ -300,34 +288,50 @@ export class MediaPipeLivenessValidator {
   private processLiveness(landmarks: any[]) {
     if (!this.sequence.length) this.generateSequence();
 
-    // Anti-Substituição: Se detectar pulo, reseta tudo
+    // Anti-Substituição: Apenas se o pulo for REALMENTE grande
     if (this.detectBlinkGap(landmarks)) {
-      this.reset();
+      this.successTimestamp = null;
+      // Não resetamos a sequência inteira aqui para não frustrar o usuário,
+      // apenas invalidamos o frame atual.
       return LivenessStatus.CENTER_FACE;
     }
 
-    // Validação 3D em tempo real em todos os frames
-    if (!this.is3DFace(landmarks)) {
-      return LivenessStatus.CENTER_FACE;
+    // Se o desafio já acabou, foca apenas no retorno ao centro
+    if (this.stepIndex >= this.sequence.length) {
+      return this.isHeadFacingForward(landmarks)
+        ? LivenessStatus.SUCCESS
+        : LivenessStatus.RETURN_CENTER;
     }
 
-    if (this.stepIndex < this.sequence.length) {
-      const currentDirection = this.sequence[this.stepIndex];
-      if (this.isHeadTurned(landmarks, currentDirection)) {
-        this.stepIndex++;
-      }
-      return currentDirection === "left"
-        ? LivenessStatus.TURN_LEFT
-        : LivenessStatus.TURN_RIGHT;
+    const currentDirection = this.sequence[this.stepIndex];
+
+    if (this.isHeadTurned(landmarks, currentDirection)) {
+      this.stepIndex++;
+      // Pequeno delay ou debounce pode ser adicionado aqui se pular etapas rápido demais
     }
 
-    // NOVO: Fase de Retorno ao Centro
-    // O status só vira SUCCESS se ele ficar parado no centro após os giros
-    if (!this.isHeadFacingForward(landmarks)) {
-      return LivenessStatus.RETURN_CENTER;
+    return currentDirection === "left"
+      ? LivenessStatus.TURN_LEFT
+      : LivenessStatus.TURN_RIGHT;
+  }
+
+  private checkGeometricRules(landmarks: any[], isMoving: boolean) {
+    // 1. Centralização Básica e Tamanho (Sempre validar)
+    if (!this.isFaceCentered(landmarks))
+      return { isValid: false, feedback: "alignYourFaceCircle" };
+    if (!this.isFaceCloseEnough(landmarks))
+      return { isValid: false, feedback: "moveCloser" };
+
+    // 2. Regras de Nivelamento (Apenas quando o usuário DEVERIA estar de frente)
+    // Se ele está no meio de um giro (isMoving = true), relaxamos esses checks
+    if (!isMoving) {
+      if (!this.isHeadFacingForward(landmarks))
+        return { isValid: false, feedback: "face.headNotLeveled" };
+      if (this.isFaceTiltedDown(landmarks))
+        return { isValid: false, feedback: "dontTiltDown" };
     }
 
-    return LivenessStatus.SUCCESS;
+    return { isValid: true, feedback: "ok" };
   }
 
   validate(
@@ -339,14 +343,23 @@ export class MediaPipeLivenessValidator {
 
     const status = this.processLiveness(landmarks);
 
+    // Determinamos se o usuário está em fase de movimento ou de estabilização
+    const isMoving =
+      status === LivenessStatus.TURN_LEFT ||
+      status === LivenessStatus.TURN_RIGHT;
+
     if (status !== LivenessStatus.SUCCESS) {
       this.successTimestamp = null;
-      // Resetamos o timestamp de estabilização se ele não estiver no centro
+
+      // Validamos a geometria passando a flag isMoving
+      const geometry = this.checkGeometricRules(landmarks, isMoving);
+      if (!geometry.isValid) return geometry;
+
       const feedbackMessages = {
         [LivenessStatus.CENTER_FACE]: "alignYourFaceCircle",
         [LivenessStatus.TURN_LEFT]: "turn.left",
         [LivenessStatus.TURN_RIGHT]: "turn.right",
-        [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle", // Feedback importante
+        [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle",
       };
 
       return {
@@ -355,28 +368,27 @@ export class MediaPipeLivenessValidator {
       };
     }
 
-    // Se chegou aqui, o status é SUCCESS (voltou ao centro)
-    // O validateBase chamará o handleStabilization
-    // Isso garante que ele fique parado por 900ms no centro ANTES de capturar
-    return this.validateBase(landmarks);
+    // Se chegou no SUCCESS, fazemos o check final rigoroso (isMoving = false)
+    const finalCheck = this.checkGeometricRules(landmarks, false);
+    if (!finalCheck.isValid) {
+      this.successTimestamp = null;
+      return finalCheck;
+    }
+
+    return this.handleStabilization();
   }
 
-  // Melhore o is3DFace para ser mais sensível
   private is3DFace(landmarks: any[]): boolean {
     const noseZ = landmarks[1].z;
     const leftCheekZ = landmarks[234].z;
     const rightCheekZ = landmarks[454].z;
     const avgEdgeZ = (leftCheekZ + rightCheekZ) / 2;
 
-    // Diferença de profundidade entre nariz e bordas
     const depthDiff = avgEdgeZ - noseZ;
 
-    // Se a foto for inclinada, o Z das bordas será muito diferente entre si
-    const surfaceFlatness = Math.abs(leftCheekZ - rightCheekZ);
-
-    // Em um rosto real virado, o Z muda mas mantém certa proporção.
-    // Em uma foto, o desvio de Z é linear ou inexistente.
-    return depthDiff > 0.04 && surfaceFlatness < 0.15;
+    // Se o valor for muito baixo (ex: < 0.02), é quase certo que é uma foto.
+    // 0.04 pode ser muito exigente para algumas câmeras.
+    return depthDiff > 0.025;
   }
 
   private handleStabilization() {
