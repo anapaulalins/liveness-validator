@@ -24,6 +24,8 @@ export class MediaPipeLivenessValidator {
   private faceSizeMin: number;
   private faceSizeMax: number;
 
+  private lastNosePos: { x: number; y: number } | null = null;
+
   constructor(config: LivenessValidatorConfig = {}) {
     this.mirrored = config.mirrored ?? true;
     // invites: 0.25–0.4 funciona bem
@@ -34,6 +36,17 @@ export class MediaPipeLivenessValidator {
 
   private getDistance(p1: any, p2: any) {
     return Math.sqrt(Math.pow(p2.x - p1.x, 2) + Math.pow(p2.y - p1.y, 2));
+  }
+
+  private detectBlinkGap(landmarks: any[]) {
+    const nose = landmarks[1];
+    if (this.lastNosePos) {
+      const movement = this.getDistance(this.lastNosePos, nose);
+      // Se o rosto "pulou" mais de 15% da tela em 1 frame, é suspeito
+      if (movement > 0.15) return true;
+    }
+    this.lastNosePos = { x: nose.x, y: nose.y };
+    return false;
   }
 
   // private generateSequence() {
@@ -227,18 +240,6 @@ export class MediaPipeLivenessValidator {
   //   return distRight / distLeft > threshold;
   // }
 
-  private is3DFace(landmarks: any[]): boolean {
-    const noseZ = landmarks[1].z;
-    const leftCheekZ = landmarks[234].z;
-    const rightCheekZ = landmarks[454].z;
-
-    // Em um rosto real, o nariz (ponto 1) deve ter um Z menor (mais perto da câmera)
-    // que as laterais do rosto. Se a diferença for quase zero, é uma superfície plana (foto).
-    const depthDiff = (leftCheekZ + rightCheekZ) / 2 - noseZ;
-
-    return depthDiff > 0.05; // Ajuste este threshold conforme testes
-  }
-
   private isHeadTurned(landmarks: any[], direction: "left" | "right") {
     const nose = landmarks[1];
     const leftEdge = landmarks[234];
@@ -272,19 +273,6 @@ export class MediaPipeLivenessValidator {
     return turnThresholdOk && zMovementOk && this.is3DFace(landmarks);
   }
 
-  private checkLivenessFeatures(blendshapes: any[]) {
-    // Score de olho aberto/fechado (pode pedir para o usuário piscar)
-    const eyeBlinkLeft =
-      blendshapes.find((b: any) => b.categoryName === "eyeBlinkLeft")?.score ||
-      0;
-    const eyeBlinkRight =
-      blendshapes.find((b: any) => b.categoryName === "eyeBlinkRight")?.score ||
-      0;
-
-    // Se os olhos estiverem perfeitamente estáticos por muito tempo, suspeite.
-    // Você pode implementar um contador de "piscadas" durante o processo.
-  }
-
   private checkGeometricRules(landmarks: any[]) {
     if (!this.isFaceCentered(landmarks))
       return { isValid: false, feedback: "alignYourFaceCircle" };
@@ -310,27 +298,36 @@ export class MediaPipeLivenessValidator {
   }
 
   private processLiveness(landmarks: any[]) {
-    if (!this.sequence.length) {
-      this.generateSequence();
-    }
+    if (!this.sequence.length) this.generateSequence();
 
-    if (!this.isFaceCentered(landmarks)) {
+    // Anti-Substituição: Se detectar pulo, reseta tudo
+    if (this.detectBlinkGap(landmarks)) {
+      this.reset();
       return LivenessStatus.CENTER_FACE;
     }
 
-    const currentDirection = this.sequence[this.stepIndex];
-
-    if (this.isHeadTurned(landmarks, currentDirection)) {
-      this.stepIndex++;
+    // Validação 3D em tempo real em todos os frames
+    if (!this.is3DFace(landmarks)) {
+      return LivenessStatus.CENTER_FACE;
     }
 
-    if (this.stepIndex >= this.sequence.length) {
-      return LivenessStatus.SUCCESS;
+    if (this.stepIndex < this.sequence.length) {
+      const currentDirection = this.sequence[this.stepIndex];
+      if (this.isHeadTurned(landmarks, currentDirection)) {
+        this.stepIndex++;
+      }
+      return currentDirection === "left"
+        ? LivenessStatus.TURN_LEFT
+        : LivenessStatus.TURN_RIGHT;
     }
 
-    return currentDirection === "left"
-      ? LivenessStatus.TURN_LEFT
-      : LivenessStatus.TURN_RIGHT;
+    // NOVO: Fase de Retorno ao Centro
+    // O status só vira SUCCESS se ele ficar parado no centro após os giros
+    if (!this.isHeadFacingForward(landmarks)) {
+      return LivenessStatus.RETURN_CENTER;
+    }
+
+    return LivenessStatus.SUCCESS;
   }
 
   validate(
@@ -338,41 +335,48 @@ export class MediaPipeLivenessValidator {
     faceLivenessEnabled: boolean,
     blendshapes?: any[],
   ) {
-    if (!faceLivenessEnabled) {
-      // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
-
-      // if (!visibility.isValid) {
-      //   this.successTimestamp = null;
-      //   return visibility;
-      // }
-
-      return this.validateBase(landmarks);
-    }
+    if (!faceLivenessEnabled) return this.validateBase(landmarks);
 
     const status = this.processLiveness(landmarks);
 
     if (status !== LivenessStatus.SUCCESS) {
       this.successTimestamp = null;
+      // Resetamos o timestamp de estabilização se ele não estiver no centro
       const feedbackMessages = {
         [LivenessStatus.CENTER_FACE]: "alignYourFaceCircle",
         [LivenessStatus.TURN_LEFT]: "turn.left",
         [LivenessStatus.TURN_RIGHT]: "turn.right",
-        [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle",
+        [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle", // Feedback importante
       };
+
       return {
         isValid: false,
         feedback: feedbackMessages[status as keyof typeof feedbackMessages],
       };
     }
 
-    // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
-
-    // if (!visibility.isValid) {
-    //   this.successTimestamp = null;
-    //   return visibility;
-    // }
-
+    // Se chegou aqui, o status é SUCCESS (voltou ao centro)
+    // O validateBase chamará o handleStabilization
+    // Isso garante que ele fique parado por 900ms no centro ANTES de capturar
     return this.validateBase(landmarks);
+  }
+
+  // Melhore o is3DFace para ser mais sensível
+  private is3DFace(landmarks: any[]): boolean {
+    const noseZ = landmarks[1].z;
+    const leftCheekZ = landmarks[234].z;
+    const rightCheekZ = landmarks[454].z;
+    const avgEdgeZ = (leftCheekZ + rightCheekZ) / 2;
+
+    // Diferença de profundidade entre nariz e bordas
+    const depthDiff = avgEdgeZ - noseZ;
+
+    // Se a foto for inclinada, o Z das bordas será muito diferente entre si
+    const surfaceFlatness = Math.abs(leftCheekZ - rightCheekZ);
+
+    // Em um rosto real virado, o Z muda mas mantém certa proporção.
+    // Em uma foto, o desvio de Z é linear ou inexistente.
+    return depthDiff > 0.04 && surfaceFlatness < 0.15;
   }
 
   private handleStabilization() {
