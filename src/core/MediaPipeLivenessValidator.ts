@@ -25,6 +25,7 @@ export class MediaPipeLivenessValidator {
   private faceSizeMax: number;
 
   private lastNosePos: { x: number; y: number } | null = null;
+  private lastNoseZ: number | null = null;
 
   constructor(config: LivenessValidatorConfig = {}) {
     this.mirrored = config.mirrored ?? true;
@@ -40,12 +41,21 @@ export class MediaPipeLivenessValidator {
 
   private detectBlinkGap(landmarks: any[]) {
     const nose = landmarks[1];
-    if (this.lastNosePos) {
+
+    if (this.lastNosePos && this.lastNoseZ !== null) {
       const movement = this.getDistance(this.lastNosePos, nose);
-      // Se o rosto "pulou" mais de 15% da tela em 1 frame, é suspeito
-      if (movement > 0.15) return true;
+      const zMovement = Math.abs(this.lastNoseZ - nose.z);
+
+      // Se o nariz pulou no plano XY OU se a profundidade mudou bruscamente
+      // Colocar um celular na frente da cara causa um pulo enorme no Z
+      if (movement > 0.12 || zMovement > 0.08) {
+        this.reset(); // Reset total se houver troca de objeto
+        return true;
+      }
     }
+
     this.lastNosePos = { x: nose.x, y: nose.y };
+    this.lastNoseZ = nose.z;
     return false;
   }
 
@@ -274,12 +284,18 @@ export class MediaPipeLivenessValidator {
   }
 
   private validateBase(landmarks: any[]) {
-    // Passamos 'false' pois nesta fase o usuário deve estar parado/estático
+    // 1. Verifica geometria estática
     const rules = this.checkGeometricRules(landmarks, false);
-
     if (!rules.isValid) {
       this.successTimestamp = null;
       return rules;
+    }
+
+    // 2. SEGURANÇA MÁXIMA: Verifica se o objeto parado no centro é 3D
+    // Se você colocar o celular aqui, ele falha e não deixa bater a foto
+    if (!this.is3DFace(landmarks)) {
+      this.successTimestamp = null;
+      return { isValid: false, feedback: "alignYourFaceCircle" };
     }
 
     return this.handleStabilization();
@@ -288,15 +304,14 @@ export class MediaPipeLivenessValidator {
   private processLiveness(landmarks: any[]) {
     if (!this.sequence.length) this.generateSequence();
 
-    // Anti-Substituição: Apenas se o pulo for REALMENTE grande
-    if (this.detectBlinkGap(landmarks)) {
-      this.successTimestamp = null;
-      // Não resetamos a sequência inteira aqui para não frustrar o usuário,
-      // apenas invalidamos o frame atual.
+    if (this.detectBlinkGap(landmarks)) return LivenessStatus.CENTER_FACE;
+
+    // Se em algum momento o objeto deixar de ser 3D (ex: botou a foto no meio do giro)
+    if (!this.is3DFace(landmarks)) {
+      this.stepIndex = 0; // Opcional: penaliza voltando o desafio do zero
       return LivenessStatus.CENTER_FACE;
     }
 
-    // Se o desafio já acabou, foca apenas no retorno ao centro
     if (this.stepIndex >= this.sequence.length) {
       return this.isHeadFacingForward(landmarks)
         ? LivenessStatus.SUCCESS
@@ -304,10 +319,8 @@ export class MediaPipeLivenessValidator {
     }
 
     const currentDirection = this.sequence[this.stepIndex];
-
     if (this.isHeadTurned(landmarks, currentDirection)) {
       this.stepIndex++;
-      // Pequeno delay ou debounce pode ser adicionado aqui se pular etapas rápido demais
     }
 
     return currentDirection === "left"
@@ -316,17 +329,20 @@ export class MediaPipeLivenessValidator {
   }
 
   private checkGeometricRules(landmarks: any[], isMoving: boolean) {
-    // 1. Centralização Básica e Tamanho (Sempre validar)
+    // 1. Centralização e Tamanho (Sempre validar)
     if (!this.isFaceCentered(landmarks))
       return { isValid: false, feedback: "alignYourFaceCircle" };
+
     if (!this.isFaceCloseEnough(landmarks))
       return { isValid: false, feedback: "moveCloser" };
 
-    // 2. Regras de Nivelamento (Apenas quando o usuário DEVERIA estar de frente)
-    // Se ele está no meio de um giro (isMoving = true), relaxamos esses checks
+    // 2. Regras de Nível e Inclinação (Apenas se NÃO estiver em movimento)
     if (!isMoving) {
+      // Verifica se a cabeça está reta (sem Roll ou Yaw excessivo)
       if (!this.isHeadFacingForward(landmarks))
         return { isValid: false, feedback: "face.headNotLeveled" };
+
+      // Verifica se não está olhando para baixo (evita foto vinda de baixo)
       if (this.isFaceTiltedDown(landmarks))
         return { isValid: false, feedback: "dontTiltDown" };
     }
@@ -343,7 +359,7 @@ export class MediaPipeLivenessValidator {
 
     const status = this.processLiveness(landmarks);
 
-    // Determinamos se o usuário está em fase de movimento ou de estabilização
+    // Se o status for TURN_LEFT ou TURN_RIGHT, isMoving é true
     const isMoving =
       status === LivenessStatus.TURN_LEFT ||
       status === LivenessStatus.TURN_RIGHT;
@@ -351,7 +367,7 @@ export class MediaPipeLivenessValidator {
     if (status !== LivenessStatus.SUCCESS) {
       this.successTimestamp = null;
 
-      // Validamos a geometria passando a flag isMoving
+      // Validamos a geometria básica durante o movimento
       const geometry = this.checkGeometricRules(landmarks, isMoving);
       if (!geometry.isValid) return geometry;
 
@@ -368,14 +384,8 @@ export class MediaPipeLivenessValidator {
       };
     }
 
-    // Se chegou no SUCCESS, fazemos o check final rigoroso (isMoving = false)
-    const finalCheck = this.checkGeometricRules(landmarks, false);
-    if (!finalCheck.isValid) {
-      this.successTimestamp = null;
-      return finalCheck;
-    }
-
-    return this.handleStabilization();
+    // Se chegou no SUCCESS, o validateBase é chamado (usando isMoving = false internamente)
+    return this.validateBase(landmarks);
   }
 
   private is3DFace(landmarks: any[]): boolean {
@@ -386,9 +396,9 @@ export class MediaPipeLivenessValidator {
 
     const depthDiff = avgEdgeZ - noseZ;
 
-    // Se o valor for muito baixo (ex: < 0.02), é quase certo que é uma foto.
-    // 0.04 pode ser muito exigente para algumas câmeras.
-    return depthDiff > 0.025;
+    // Em fotos de celular, o MediaPipe costuma projetar o Z de forma quase plana.
+    // O valor 0.035 costuma ser o "sweet spot" para separar tela de rosto real.
+    return depthDiff > 0.035;
   }
 
   private handleStabilization() {
@@ -406,9 +416,10 @@ export class MediaPipeLivenessValidator {
   }
 
   reset() {
-    this.currentStatus = LivenessStatus.CENTER_FACE;
     this.successTimestamp = null;
     this.stepIndex = 0;
+    this.lastNosePos = null;
+    this.lastNoseZ = null;
     this.generateSequence();
   }
 }
