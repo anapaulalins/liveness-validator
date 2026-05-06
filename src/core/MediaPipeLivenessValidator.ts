@@ -24,9 +24,6 @@ export class MediaPipeLivenessValidator {
   private faceSizeMin: number;
   private faceSizeMax: number;
 
-  private frameHistory: any[] = [];
-  private maxHistory = 10;
-
   constructor(config: LivenessValidatorConfig = {}) {
     this.mirrored = config.mirrored ?? true;
     // invites: 0.25–0.4 funciona bem
@@ -205,6 +202,31 @@ export class MediaPipeLivenessValidator {
     return ratio > 1.2;
   }
 
+  // private isHeadTurned(landmarks: any[], direction: "left" | "right") {
+  //   const nose = landmarks[1];
+  //   const leftFace = landmarks[234];
+  //   const rightFace = landmarks[454];
+
+  //   const distLeft = this.getDistance(nose, leftFace);
+  //   const distRight = this.getDistance(nose, rightFace);
+
+  //   const threshold = 1.25;
+
+  //   // Com câmera espelhada (invites): esquerda visual = lado direito da imagem
+  //   // Sem espelhamento (totem): esquerda visual = lado esquerdo da imagem
+  //   const effectiveDirection = this.mirrored
+  //     ? direction
+  //     : direction === "left"
+  //       ? "right"
+  //       : "left";
+
+  //   if (effectiveDirection === "left") {
+  //     return distLeft / distRight > threshold;
+  //   }
+
+  //   return distRight / distLeft > threshold;
+  // }
+
   private isHeadTurned(landmarks: any[], direction: "left" | "right") {
     const nose = landmarks[1];
     const leftFace = landmarks[234];
@@ -213,21 +235,40 @@ export class MediaPipeLivenessValidator {
     const distLeft = this.getDistance(nose, leftFace);
     const distRight = this.getDistance(nose, rightFace);
 
-    const threshold = 1.25;
+    const ratio = distLeft / distRight;
 
-    // Com câmera espelhada (invites): esquerda visual = lado direito da imagem
-    // Sem espelhamento (totem): esquerda visual = lado esquerdo da imagem
     const effectiveDirection = this.mirrored
       ? direction
       : direction === "left"
         ? "right"
         : "left";
 
-    if (effectiveDirection === "left") {
-      return distLeft / distRight > threshold;
-    }
+    // 1. condição principal (mais rígida)
+    const thresholdOk =
+      effectiveDirection === "left" ? ratio > 1.5 : ratio < 0.67;
 
-    return distRight / distLeft > threshold;
+    // 2. validação angular (multi-feature)
+    const yawScore = this.getYawScore(landmarks);
+    const yawOk = yawScore > 0.02;
+
+    // 🔥 exige os dois
+    return thresholdOk && yawOk;
+  }
+
+  private getYawScore(landmarks: any[]) {
+    const nose = landmarks[1];
+    const leftEye = landmarks[33];
+    const rightEye = landmarks[263];
+
+    const leftCheek = landmarks[234];
+    const rightCheek = landmarks[454];
+
+    const eyeRatio =
+      this.getDistance(nose, leftEye) / this.getDistance(nose, rightEye);
+    const cheekRatio =
+      this.getDistance(nose, leftCheek) / this.getDistance(nose, rightCheek);
+
+    return Math.abs(eyeRatio - cheekRatio);
   }
 
   // private isHeadTurned(landmarks: any[], direction: "left" | "right") {
@@ -292,14 +333,7 @@ export class MediaPipeLivenessValidator {
 
     const currentDirection = this.sequence[this.stepIndex];
 
-    if (!this.isMovementReal()) {
-      return LivenessStatus.CENTER_FACE;
-    }
-
-    if (
-      this.isMovementReal() &&
-      this.isHeadTurned(landmarks, currentDirection)
-    ) {
+    if (this.isHeadTurned(landmarks, currentDirection)) {
       this.stepIndex++;
     }
 
@@ -312,34 +346,19 @@ export class MediaPipeLivenessValidator {
       : LivenessStatus.TURN_RIGHT;
   }
 
-  private isMovementReal() {
-    const diffs = [];
-
-    for (let i = 1; i < this.frameHistory.length; i++) {
-      const prev = this.frameHistory[i - 1][1]; // nose
-      const curr = this.frameHistory[i][1];
-
-      const dist = Math.abs(curr.x - prev.x) + Math.abs(curr.y - prev.y);
-      diffs.push(dist);
-    }
-
-    const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
-
-    return avg > 0.002;
-  }
-
   validate(
     landmarks: any[],
     faceLivenessEnabled: boolean,
     blendshapes?: any[],
   ) {
-    this.frameHistory.push(landmarks);
-
-    if (this.frameHistory.length > this.maxHistory) {
-      this.frameHistory.shift();
-    }
-
     if (!faceLivenessEnabled) {
+      // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
+
+      // if (!visibility.isValid) {
+      //   this.successTimestamp = null;
+      //   return visibility;
+      // }
+
       return this.validateBase(landmarks);
     }
 
@@ -358,6 +377,13 @@ export class MediaPipeLivenessValidator {
         feedback: feedbackMessages[status as keyof typeof feedbackMessages],
       };
     }
+
+    // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
+
+    // if (!visibility.isValid) {
+    //   this.successTimestamp = null;
+    //   return visibility;
+    // }
 
     return this.validateBase(landmarks);
   }
