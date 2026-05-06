@@ -227,76 +227,63 @@ export class MediaPipeLivenessValidator {
   //   return distRight / distLeft > threshold;
   // }
 
+  private is3DFace(landmarks: any[]): boolean {
+    const noseZ = landmarks[1].z;
+    const leftCheekZ = landmarks[234].z;
+    const rightCheekZ = landmarks[454].z;
+
+    // Em um rosto real, o nariz (ponto 1) deve ter um Z menor (mais perto da câmera)
+    // que as laterais do rosto. Se a diferença for quase zero, é uma superfície plana (foto).
+    const depthDiff = (leftCheekZ + rightCheekZ) / 2 - noseZ;
+
+    return depthDiff > 0.05; // Ajuste este threshold conforme testes
+  }
+
   private isHeadTurned(landmarks: any[], direction: "left" | "right") {
     const nose = landmarks[1];
-    const leftFace = landmarks[234];
-    const rightFace = landmarks[454];
+    const leftEdge = landmarks[234];
+    const rightEdge = landmarks[454];
 
-    const distLeft = this.getDistance(nose, leftFace);
-    const distRight = this.getDistance(nose, rightFace);
+    const distLeft = this.getDistance(nose, leftEdge);
+    const distRight = this.getDistance(nose, rightEdge);
 
     const ratio = distLeft / distRight;
 
-    const effectiveDirection = this.mirrored
-      ? direction
-      : direction === "left"
-        ? "right"
-        : "left";
+    // Ajuste para câmera espelhada
+    const isLookingLeft = this.mirrored ? ratio > 2.0 : ratio < 0.5;
+    const isLookingRight = this.mirrored ? ratio < 0.5 : ratio > 2.0;
 
-    // 1. condição principal (mais rígida)
-    const thresholdOk =
-      effectiveDirection === "left" ? ratio > 1.5 : ratio < 0.67;
+    // 1. Verificação de Ratio (Aumentamos para 2.0 para exigir giro maior)
+    const turnThresholdOk =
+      direction === "left" ? isLookingLeft : isLookingRight;
 
-    // 2. validação angular (multi-feature)
-    const yawScore = this.getYawScore(landmarks);
-    const yawOk = yawScore > 0.02;
+    // 2. Verificação de Z-Shift (O lado para onde viro deve se aproximar da câmera)
+    const leftEdgeZ = landmarks[234].z;
+    const rightEdgeZ = landmarks[454].z;
+    const zMovementOk =
+      direction === "left"
+        ? this.mirrored
+          ? leftEdgeZ < rightEdgeZ
+          : rightEdgeZ < leftEdgeZ
+        : this.mirrored
+          ? rightEdgeZ < leftEdgeZ
+          : leftEdgeZ < rightEdgeZ;
 
-    // 🔥 exige os dois
-    return thresholdOk && yawOk;
+    return turnThresholdOk && zMovementOk && this.is3DFace(landmarks);
   }
 
-  private getYawScore(landmarks: any[]) {
-    const nose = landmarks[1];
-    const leftEye = landmarks[33];
-    const rightEye = landmarks[263];
+  private checkLivenessFeatures(blendshapes: any[]) {
+    // Score de olho aberto/fechado (pode pedir para o usuário piscar)
+    const eyeBlinkLeft =
+      blendshapes.find((b: any) => b.categoryName === "eyeBlinkLeft")?.score ||
+      0;
+    const eyeBlinkRight =
+      blendshapes.find((b: any) => b.categoryName === "eyeBlinkRight")?.score ||
+      0;
 
-    const leftCheek = landmarks[234];
-    const rightCheek = landmarks[454];
-
-    const eyeRatio =
-      this.getDistance(nose, leftEye) / this.getDistance(nose, rightEye);
-    const cheekRatio =
-      this.getDistance(nose, leftCheek) / this.getDistance(nose, rightCheek);
-
-    return Math.abs(eyeRatio - cheekRatio);
+    // Se os olhos estiverem perfeitamente estáticos por muito tempo, suspeite.
+    // Você pode implementar um contador de "piscadas" durante o processo.
   }
-
-  // private isHeadTurned(landmarks: any[], direction: "left" | "right") {
-  //   const nose = landmarks[1];
-  //   const leftFace = landmarks[234]; // Lado "0" do eixo X na imagem
-  //   const rightFace = landmarks[454]; // Lado "1" do eixo X na imagem
-
-  //   const distLeft = this.getDistance(nose, leftFace);
-  //   const distRight = this.getDistance(nose, rightFace);
-
-  //   // 🔥 Reduzi o threshold de 1.35 para 1.25.
-  //   // 1.35 é muito rígido para Webcams comuns e faz o usuário ter que virar demais o pescoço.
-  //   const threshold = 1.25;
-
-  //   // 💡 INVERSÃO PARA CÂMERA ESPELHADA (Mirrored):
-  //   // Na sua tela: Esquerda Visual = Lado Direito da Imagem (454)
-  //   // Na sua tela: Direita Visual = Lado Esquerdo da Imagem (234)
-
-  //   if (direction === "left") {
-  //     // Para o usuário virar para a esquerda visual, o nariz deve chegar perto do ponto 454
-  //     // Portanto, a distância para o ponto 234 (distLeft) deve ser maior.
-  //     return distLeft / distRight > threshold;
-  //   }
-
-  //   // Para o usuário virar para a direita visual, o nariz deve chegar perto do ponto 234
-  //   // Portanto, a distância para o ponto 454 (distRight) deve ser maior.
-  //   return distRight / distLeft > threshold;
-  // }
 
   private checkGeometricRules(landmarks: any[]) {
     if (!this.isFaceCentered(landmarks))
