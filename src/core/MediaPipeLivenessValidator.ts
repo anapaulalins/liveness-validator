@@ -334,12 +334,12 @@ export class MediaPipeLivenessValidator {
       };
     }
 
-    const visibility = this.validateFaceVisibility(landmarks, blendshapes);
+    // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
 
-    if (!visibility.isValid) {
-      this.successTimestamp = null;
-      return visibility;
-    }
+    // if (!visibility.isValid) {
+    //   this.successTimestamp = null;
+    //   return visibility;
+    // }
 
     return this.validateBase(landmarks);
   }
