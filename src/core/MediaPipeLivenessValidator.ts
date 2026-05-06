@@ -24,6 +24,9 @@ export class MediaPipeLivenessValidator {
   private faceSizeMin: number;
   private faceSizeMax: number;
 
+  private frameHistory: any[] = [];
+  private maxHistory = 10;
+
   constructor(config: LivenessValidatorConfig = {}) {
     this.mirrored = config.mirrored ?? true;
     // invites: 0.25–0.4 funciona bem
@@ -289,7 +292,14 @@ export class MediaPipeLivenessValidator {
 
     const currentDirection = this.sequence[this.stepIndex];
 
-    if (this.isHeadTurned(landmarks, currentDirection)) {
+    if (!this.isMovementReal()) {
+      return LivenessStatus.CENTER_FACE;
+    }
+
+    if (
+      this.isMovementReal() &&
+      this.isHeadTurned(landmarks, currentDirection)
+    ) {
       this.stepIndex++;
     }
 
@@ -302,19 +312,34 @@ export class MediaPipeLivenessValidator {
       : LivenessStatus.TURN_RIGHT;
   }
 
+  private isMovementReal() {
+    const diffs = [];
+
+    for (let i = 1; i < this.frameHistory.length; i++) {
+      const prev = this.frameHistory[i - 1][1]; // nose
+      const curr = this.frameHistory[i][1];
+
+      const dist = Math.abs(curr.x - prev.x) + Math.abs(curr.y - prev.y);
+      diffs.push(dist);
+    }
+
+    const avg = diffs.reduce((a, b) => a + b, 0) / diffs.length;
+
+    return avg > 0.002;
+  }
+
   validate(
     landmarks: any[],
     faceLivenessEnabled: boolean,
     blendshapes?: any[],
   ) {
+    this.frameHistory.push(landmarks);
+
+    if (this.frameHistory.length > this.maxHistory) {
+      this.frameHistory.shift();
+    }
+
     if (!faceLivenessEnabled) {
-      // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
-
-      // if (!visibility.isValid) {
-      //   this.successTimestamp = null;
-      //   return visibility;
-      // }
-
       return this.validateBase(landmarks);
     }
 
@@ -333,13 +358,6 @@ export class MediaPipeLivenessValidator {
         feedback: feedbackMessages[status as keyof typeof feedbackMessages],
       };
     }
-
-    // const visibility = this.validateFaceVisibility(landmarks, blendshapes);
-
-    // if (!visibility.isValid) {
-    //   this.successTimestamp = null;
-    //   return visibility;
-    // }
 
     return this.validateBase(landmarks);
   }
