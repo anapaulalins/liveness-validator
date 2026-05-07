@@ -255,16 +255,18 @@ export class MediaPipeLivenessValidator {
     const leftEdge = landmarks[234];
     const rightEdge = landmarks[454];
 
+    // Cálculo de distâncias horizontais
     const distLeft = this.getDistance(nose, leftEdge);
     const distRight = this.getDistance(nose, rightEdge);
-
     const ratio = distLeft / distRight;
 
-    const TURN_THRESHOLD = 4.2;
-    const Z_MIN_DIFF = 0.08;
-    const NOSE_OFFSET_MIN = 0.12; // nariz deve estar a pelo menos 12% do centro horizontal
+    // --- CONFIGURAÇÃO DE RIGOR ---
+    const TURN_THRESHOLD = 7.0; // Nariz quase na orelha
+    const Z_MIN_DIFF = 0.15; // Profundidade acentuada
+    const NOSE_OFFSET_PERCENT = 0.35; // Nariz deve mover 35% da largura total do rosto
+    // -----------------------------
 
-    // 1. Ratio de distâncias
+    // 1. Verificação do Ratio
     const isLookingLeft = this.mirrored
       ? ratio > TURN_THRESHOLD
       : ratio < 1 / TURN_THRESHOLD;
@@ -274,10 +276,8 @@ export class MediaPipeLivenessValidator {
     const turnThresholdOk =
       direction === "left" ? isLookingLeft : isLookingRight;
 
-    // 2. Z-Shift com margem obrigatória
-    const leftEdgeZ = landmarks[234].z;
-    const rightEdgeZ = landmarks[454].z;
-    const zDiff = leftEdgeZ - rightEdgeZ;
+    // 2. Verificação de Profundidade (Z-Shift)
+    const zDiff = landmarks[234].z - landmarks[454].z;
     const zMovementOk =
       direction === "left"
         ? this.mirrored
@@ -287,23 +287,31 @@ export class MediaPipeLivenessValidator {
           ? zDiff > Z_MIN_DIFF
           : zDiff < -Z_MIN_DIFF;
 
-    // 3. Deslocamento do nariz em relação ao centro facial (métrica independente)
-    // O centro facial real é o ponto médio entre as bordas esquerda e direita
+    // 3. Deslocamento do Nariz (Normalizado pela largura do rosto)
+    const faceWidth = Math.abs(rightEdge.x - leftEdge.x);
     const faceCenterX = (leftEdge.x + rightEdge.x) / 2;
     const noseOffset = nose.x - faceCenterX;
 
-    // Com câmera espelhada: virar esquerda = nariz vai para direita da imagem (x > centro)
-    const noseOffsetOk =
+    // Calculamos quanto o nariz moveu proporcionalmente ao tamanho do rosto
+    const relativeNoseOffset = Math.abs(noseOffset) / faceWidth;
+
+    const noseDirectionOk =
       direction === "left"
         ? this.mirrored
-          ? noseOffset > NOSE_OFFSET_MIN
-          : noseOffset < -NOSE_OFFSET_MIN
+          ? noseOffset > 0
+          : noseOffset < 0
         : this.mirrored
-          ? noseOffset < -NOSE_OFFSET_MIN
-          : noseOffset > NOSE_OFFSET_MIN;
+          ? noseOffset < 0
+          : noseOffset > 0;
+
+    const noseMovementOk =
+      relativeNoseOffset > NOSE_OFFSET_PERCENT && noseDirectionOk;
 
     return (
-      turnThresholdOk && zMovementOk && noseOffsetOk && this.is3DFace(landmarks)
+      turnThresholdOk &&
+      zMovementOk &&
+      noseMovementOk &&
+      this.is3DFace(landmarks)
     );
   }
 
