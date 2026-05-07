@@ -250,9 +250,6 @@ export class MediaPipeLivenessValidator {
   //   return distRight / distLeft > threshold;
   // }
 
-  private turnFrameCount = 0;
-  private readonly TURN_FRAMES_REQUIRED = 8; // precisa manter o giro por 8 frames (~270ms a 30fps)
-
   private isHeadTurned(landmarks: any[], direction: "left" | "right") {
     const nose = landmarks[1];
     const leftEdge = landmarks[234];
@@ -263,10 +260,11 @@ export class MediaPipeLivenessValidator {
 
     const ratio = distLeft / distRight;
 
-    const TURN_THRESHOLD = 5.0; // era 4.2
-    const Z_MIN_DIFF = 0.1; // era 0.08
-    const NOSE_OFFSET_MIN = 0.18; // era 0.12
+    const TURN_THRESHOLD = 4.2;
+    const Z_MIN_DIFF = 0.08;
+    const NOSE_OFFSET_MIN = 0.12; // nariz deve estar a pelo menos 12% do centro horizontal
 
+    // 1. Ratio de distâncias
     const isLookingLeft = this.mirrored
       ? ratio > TURN_THRESHOLD
       : ratio < 1 / TURN_THRESHOLD;
@@ -276,6 +274,7 @@ export class MediaPipeLivenessValidator {
     const turnThresholdOk =
       direction === "left" ? isLookingLeft : isLookingRight;
 
+    // 2. Z-Shift com margem obrigatória
     const leftEdgeZ = landmarks[234].z;
     const rightEdgeZ = landmarks[454].z;
     const zDiff = leftEdgeZ - rightEdgeZ;
@@ -288,8 +287,12 @@ export class MediaPipeLivenessValidator {
           ? zDiff > Z_MIN_DIFF
           : zDiff < -Z_MIN_DIFF;
 
+    // 3. Deslocamento do nariz em relação ao centro facial (métrica independente)
+    // O centro facial real é o ponto médio entre as bordas esquerda e direita
     const faceCenterX = (leftEdge.x + rightEdge.x) / 2;
     const noseOffset = nose.x - faceCenterX;
+
+    // Com câmera espelhada: virar esquerda = nariz vai para direita da imagem (x > centro)
     const noseOffsetOk =
       direction === "left"
         ? this.mirrored
@@ -299,78 +302,10 @@ export class MediaPipeLivenessValidator {
           ? noseOffset < -NOSE_OFFSET_MIN
           : noseOffset > NOSE_OFFSET_MIN;
 
-    const allConditionsMet =
-      turnThresholdOk &&
-      zMovementOk &&
-      noseOffsetOk &&
-      this.is3DFace(landmarks);
-
-    // Exige consistência: zera o contador se qualquer condição falhar
-    if (allConditionsMet) {
-      this.turnFrameCount++;
-    } else {
-      this.turnFrameCount = 0;
-    }
-
-    return this.turnFrameCount >= this.TURN_FRAMES_REQUIRED;
+    return (
+      turnThresholdOk && zMovementOk && noseOffsetOk && this.is3DFace(landmarks)
+    );
   }
-
-  // private isHeadTurned(landmarks: any[], direction: "left" | "right") {
-  //   const nose = landmarks[1];
-  //   const leftEdge = landmarks[234];
-  //   const rightEdge = landmarks[454];
-
-  //   const distLeft = this.getDistance(nose, leftEdge);
-  //   const distRight = this.getDistance(nose, rightEdge);
-
-  //   const ratio = distLeft / distRight;
-
-  //   const TURN_THRESHOLD = 4.2;
-  //   const Z_MIN_DIFF = 0.08;
-  //   const NOSE_OFFSET_MIN = 0.12; // nariz deve estar a pelo menos 12% do centro horizontal
-
-  //   // 1. Ratio de distâncias
-  //   const isLookingLeft = this.mirrored
-  //     ? ratio > TURN_THRESHOLD
-  //     : ratio < 1 / TURN_THRESHOLD;
-  //   const isLookingRight = this.mirrored
-  //     ? ratio < 1 / TURN_THRESHOLD
-  //     : ratio > TURN_THRESHOLD;
-  //   const turnThresholdOk =
-  //     direction === "left" ? isLookingLeft : isLookingRight;
-
-  //   // 2. Z-Shift com margem obrigatória
-  //   const leftEdgeZ = landmarks[234].z;
-  //   const rightEdgeZ = landmarks[454].z;
-  //   const zDiff = leftEdgeZ - rightEdgeZ;
-  //   const zMovementOk =
-  //     direction === "left"
-  //       ? this.mirrored
-  //         ? zDiff < -Z_MIN_DIFF
-  //         : zDiff > Z_MIN_DIFF
-  //       : this.mirrored
-  //         ? zDiff > Z_MIN_DIFF
-  //         : zDiff < -Z_MIN_DIFF;
-
-  //   // 3. Deslocamento do nariz em relação ao centro facial (métrica independente)
-  //   // O centro facial real é o ponto médio entre as bordas esquerda e direita
-  //   const faceCenterX = (leftEdge.x + rightEdge.x) / 2;
-  //   const noseOffset = nose.x - faceCenterX;
-
-  //   // Com câmera espelhada: virar esquerda = nariz vai para direita da imagem (x > centro)
-  //   const noseOffsetOk =
-  //     direction === "left"
-  //       ? this.mirrored
-  //         ? noseOffset > NOSE_OFFSET_MIN
-  //         : noseOffset < -NOSE_OFFSET_MIN
-  //       : this.mirrored
-  //         ? noseOffset < -NOSE_OFFSET_MIN
-  //         : noseOffset > NOSE_OFFSET_MIN;
-
-  //   return (
-  //     turnThresholdOk && zMovementOk && noseOffsetOk && this.is3DFace(landmarks)
-  //   );
-  // }
 
   private validateBase(landmarks: any[]) {
     // 1. Verifica geometria estática
@@ -509,7 +444,6 @@ export class MediaPipeLivenessValidator {
     this.stepIndex = 0;
     this.lastNosePos = null;
     this.lastNoseZ = null;
-    this.turnFrameCount = 0; // <-- adicionar
     this.generateSequence();
   }
 }
