@@ -260,29 +260,38 @@ export class MediaPipeLivenessValidator {
 
     const ratio = distLeft / distRight;
 
-    // Ajuste para câmera espelhada
-    const isLookingLeft = this.mirrored ? ratio > 2.0 : ratio < 0.5;
-    const isLookingRight = this.mirrored ? ratio < 0.5 : ratio > 2.0;
+    // Threshold mais exigente: era 2.0/0.5, agora exige giro mais pronunciado
+    const TURN_THRESHOLD = 2.8;
 
-    // 1. Verificação de Ratio (Aumentamos para 2.0 para exigir giro maior)
+    const isLookingLeft = this.mirrored
+      ? ratio > TURN_THRESHOLD
+      : ratio < 1 / TURN_THRESHOLD;
+    const isLookingRight = this.mirrored
+      ? ratio < 1 / TURN_THRESHOLD
+      : ratio > TURN_THRESHOLD;
+
     const turnThresholdOk =
       direction === "left" ? isLookingLeft : isLookingRight;
 
-    // 2. Verificação de Z-Shift (O lado para onde viro deve se aproximar da câmera)
+    // Z-Shift: o lado para onde vira deve se aproximar da câmera
     const leftEdgeZ = landmarks[234].z;
     const rightEdgeZ = landmarks[454].z;
+
+    // Exige diferença mínima de Z para evitar falsos positivos com micro-movimentos
+    const Z_MIN_DIFF = 0.04;
+    const zDiff = leftEdgeZ - rightEdgeZ;
+
     const zMovementOk =
       direction === "left"
         ? this.mirrored
-          ? leftEdgeZ < rightEdgeZ
-          : rightEdgeZ < leftEdgeZ
+          ? zDiff < -Z_MIN_DIFF // leftEdgeZ < rightEdgeZ por margem mínima
+          : zDiff > Z_MIN_DIFF
         : this.mirrored
-          ? rightEdgeZ < leftEdgeZ
-          : leftEdgeZ < rightEdgeZ;
+          ? zDiff > Z_MIN_DIFF // rightEdgeZ < leftEdgeZ por margem mínima
+          : zDiff < -Z_MIN_DIFF;
 
     return turnThresholdOk && zMovementOk && this.is3DFace(landmarks);
   }
-
   private validateBase(landmarks: any[]) {
     // 1. Verifica geometria estática
     const rules = this.checkGeometricRules(landmarks, false);
