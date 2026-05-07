@@ -260,25 +260,24 @@ export class MediaPipeLivenessValidator {
 
     const ratio = distLeft / distRight;
 
-    const TURN_THRESHOLD = 3.5; // era 2.0 — exige giro de ~30°
-    const Z_MIN_DIFF = 0.06; // era 0.04 — elimina micro-movimentos
-    const YAW_MIN_ASYMMETRY = 0.3; // novo — distância lateral mínima deve ser assimétrica
+    const TURN_THRESHOLD = 4.2;
+    const Z_MIN_DIFF = 0.08;
+    const NOSE_OFFSET_MIN = 0.12; // nariz deve estar a pelo menos 12% do centro horizontal
 
+    // 1. Ratio de distâncias
     const isLookingLeft = this.mirrored
       ? ratio > TURN_THRESHOLD
       : ratio < 1 / TURN_THRESHOLD;
     const isLookingRight = this.mirrored
       ? ratio < 1 / TURN_THRESHOLD
       : ratio > TURN_THRESHOLD;
-
     const turnThresholdOk =
       direction === "left" ? isLookingLeft : isLookingRight;
 
-    // Z-Shift com margem mínima obrigatória
+    // 2. Z-Shift com margem obrigatória
     const leftEdgeZ = landmarks[234].z;
     const rightEdgeZ = landmarks[454].z;
     const zDiff = leftEdgeZ - rightEdgeZ;
-
     const zMovementOk =
       direction === "left"
         ? this.mirrored
@@ -288,12 +287,24 @@ export class MediaPipeLivenessValidator {
           ? zDiff > Z_MIN_DIFF
           : zDiff < -Z_MIN_DIFF;
 
-    // Yaw assimétrico: garante que a diferença de distâncias seja perceptível
-    const yawAsymmetry =
-      Math.abs(distLeft - distRight) / Math.max(distLeft, distRight);
-    const yawOk = yawAsymmetry > YAW_MIN_ASYMMETRY;
+    // 3. Deslocamento do nariz em relação ao centro facial (métrica independente)
+    // O centro facial real é o ponto médio entre as bordas esquerda e direita
+    const faceCenterX = (leftEdge.x + rightEdge.x) / 2;
+    const noseOffset = nose.x - faceCenterX;
 
-    return turnThresholdOk && zMovementOk && yawOk && this.is3DFace(landmarks);
+    // Com câmera espelhada: virar esquerda = nariz vai para direita da imagem (x > centro)
+    const noseOffsetOk =
+      direction === "left"
+        ? this.mirrored
+          ? noseOffset > NOSE_OFFSET_MIN
+          : noseOffset < -NOSE_OFFSET_MIN
+        : this.mirrored
+          ? noseOffset < -NOSE_OFFSET_MIN
+          : noseOffset > NOSE_OFFSET_MIN;
+
+    return (
+      turnThresholdOk && zMovementOk && noseOffsetOk && this.is3DFace(landmarks)
+    );
   }
 
   private validateBase(landmarks: any[]) {
