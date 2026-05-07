@@ -260,8 +260,9 @@ export class MediaPipeLivenessValidator {
 
     const ratio = distLeft / distRight;
 
-    // Threshold mais exigente: era 2.0/0.5, agora exige giro mais pronunciado
-    const TURN_THRESHOLD = 2.8;
+    const TURN_THRESHOLD = 3.5; // era 2.0 — exige giro de ~30°
+    const Z_MIN_DIFF = 0.06; // era 0.04 — elimina micro-movimentos
+    const YAW_MIN_ASYMMETRY = 0.3; // novo — distância lateral mínima deve ser assimétrica
 
     const isLookingLeft = this.mirrored
       ? ratio > TURN_THRESHOLD
@@ -273,25 +274,28 @@ export class MediaPipeLivenessValidator {
     const turnThresholdOk =
       direction === "left" ? isLookingLeft : isLookingRight;
 
-    // Z-Shift: o lado para onde vira deve se aproximar da câmera
+    // Z-Shift com margem mínima obrigatória
     const leftEdgeZ = landmarks[234].z;
     const rightEdgeZ = landmarks[454].z;
-
-    // Exige diferença mínima de Z para evitar falsos positivos com micro-movimentos
-    const Z_MIN_DIFF = 0.04;
     const zDiff = leftEdgeZ - rightEdgeZ;
 
     const zMovementOk =
       direction === "left"
         ? this.mirrored
-          ? zDiff < -Z_MIN_DIFF // leftEdgeZ < rightEdgeZ por margem mínima
+          ? zDiff < -Z_MIN_DIFF
           : zDiff > Z_MIN_DIFF
         : this.mirrored
-          ? zDiff > Z_MIN_DIFF // rightEdgeZ < leftEdgeZ por margem mínima
+          ? zDiff > Z_MIN_DIFF
           : zDiff < -Z_MIN_DIFF;
 
-    return turnThresholdOk && zMovementOk && this.is3DFace(landmarks);
+    // Yaw assimétrico: garante que a diferença de distâncias seja perceptível
+    const yawAsymmetry =
+      Math.abs(distLeft - distRight) / Math.max(distLeft, distRight);
+    const yawOk = yawAsymmetry > YAW_MIN_ASYMMETRY;
+
+    return turnThresholdOk && zMovementOk && yawOk && this.is3DFace(landmarks);
   }
+
   private validateBase(landmarks: any[]) {
     // 1. Verifica geometria estática
     const rules = this.checkGeometricRules(landmarks, false);
