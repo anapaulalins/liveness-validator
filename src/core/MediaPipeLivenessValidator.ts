@@ -372,7 +372,7 @@ export class MediaPipeLivenessValidator {
     if (!isMoving) {
       // Verifica se a cabeça está reta (sem Roll ou Yaw excessivo)
       if (!this.isHeadFacingForward(landmarks))
-        return { isValid: false, feedback: "face.headNotLeveled" };
+        return { isValid: false, feedback: "dontTiltDown" };
 
       // Verifica se não está olhando para baixo (evita foto vinda de baixo)
       if (this.isFaceTiltedDown(landmarks))
