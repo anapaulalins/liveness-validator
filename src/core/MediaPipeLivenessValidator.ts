@@ -43,10 +43,9 @@ export class MediaPipeLivenessValidator {
     this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.13 : 0.25);
     this.faceSizeMax = config.faceSize?.max ?? (this.isMobile ? 0.28 : 0.4);
 
-    // Thresholds internos por plataforma
-    this.turnThreshold = this.isMobile ? 2.2 : 7.0;
+    this.turnThreshold = this.isMobile ? 3.2 : 7.0;
     this.zMinDiff = this.isMobile ? 0.08 : 0.15;
-    this.noseOffsetPercent = this.isMobile ? 0.18 : 0.35;
+    this.noseOffsetPercent = this.isMobile ? 0.25 : 0.35;
     this.blinkGapMovement = this.isMobile ? 0.25 : 0.12;
     this.blinkGapZ = this.isMobile ? 0.15 : 0.08;
   }
@@ -199,9 +198,13 @@ export class MediaPipeLivenessValidator {
   //   return faceSize > 0.25 && faceSize < 0.4;
   // }
 
-  private isFaceCloseEnough(landmarks: any[]) {
+  private getFaceDistanceFeedback(
+    landmarks: any[],
+  ): "ok" | "closer" | "farther" {
     const faceSize = this.getFaceSize(landmarks);
-    return faceSize > this.faceSizeMin && faceSize < this.faceSizeMax;
+    if (faceSize < this.faceSizeMin) return "closer";
+    if (faceSize > this.faceSizeMax) return "farther";
+    return "ok";
   }
 
   private isHeadFacingForward(landmarks: any[]) {
@@ -364,20 +367,18 @@ export class MediaPipeLivenessValidator {
   }
 
   private checkGeometricRules(landmarks: any[], isMoving: boolean) {
-    // 1. Centralização e Tamanho (Sempre validar)
     if (!this.isFaceCentered(landmarks))
       return { isValid: false, feedback: "alignYourFaceCircle" };
 
-    if (!this.isFaceCloseEnough(landmarks))
+    const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
+    if (distanceFeedback === "closer")
       return { isValid: false, feedback: "moveCloser" };
+    if (distanceFeedback === "farther")
+      return { isValid: false, feedback: "moveFarther" };
 
-    // 2. Regras de Nível e Inclinação (Apenas se NÃO estiver em movimento)
     if (!isMoving) {
-      // Verifica se a cabeça está reta (sem Roll ou Yaw excessivo)
       if (!this.isHeadFacingForward(landmarks))
         return { isValid: false, feedback: "dontTiltDown" };
-
-      // Verifica se não está olhando para baixo (evita foto vinda de baixo)
       if (this.isFaceTiltedDown(landmarks))
         return { isValid: false, feedback: "dontTiltDown" };
     }
