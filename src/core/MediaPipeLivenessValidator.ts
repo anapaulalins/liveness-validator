@@ -394,15 +394,14 @@ export class MediaPipeLivenessValidator {
 
     const status = this.processLiveness(landmarks);
 
-    // Se o status for TURN_LEFT ou TURN_RIGHT, isMoving é true
     const isMoving =
       status === LivenessStatus.TURN_LEFT ||
-      status === LivenessStatus.TURN_RIGHT;
+      status === LivenessStatus.TURN_RIGHT ||
+      status === LivenessStatus.RETURN_CENTER;
 
     if (status !== LivenessStatus.SUCCESS) {
       this.successTimestamp = null;
 
-      // Validamos a geometria básica durante o movimento
       const geometry = this.checkGeometricRules(landmarks, isMoving);
       if (!geometry.isValid) return geometry;
 
@@ -419,7 +418,6 @@ export class MediaPipeLivenessValidator {
       };
     }
 
-    // Se chegou no SUCCESS, o validateBase é chamado (usando isMoving = false internamente)
     return this.validateBase(landmarks);
   }
 
