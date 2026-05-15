@@ -369,13 +369,13 @@ export class MediaPipeLivenessValidator {
     if (!this.isFaceCentered(landmarks))
       return { isValid: false, feedback: "alignYourFaceCircle" };
 
-    const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
-    if (distanceFeedback === "closer")
-      return { isValid: false, feedback: "moveCloser" };
-    if (distanceFeedback === "farther")
-      return { isValid: false, feedback: "moveFarther" };
-
     if (!isMoving) {
+      const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
+      if (distanceFeedback === "closer")
+        return { isValid: false, feedback: "moveCloser" };
+      if (distanceFeedback === "farther")
+        return { isValid: false, feedback: "moveFarther" };
+
       if (!this.isHeadFacingForward(landmarks))
         return { isValid: false, feedback: "dontTiltDown" };
       if (this.isFaceTiltedDown(landmarks))
