@@ -39,13 +39,12 @@ export class MediaPipeLivenessValidator {
 
     this.isMobile = config.isMobile ?? false;
 
-    // faceSize: config explícito tem prioridade, senão usa o default por plataforma
-    this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.13 : 0.25);
-    this.faceSizeMax = config.faceSize?.max ?? (this.isMobile ? 0.28 : 0.4);
+    this.turnThreshold = this.isMobile ? 4.5 : 7.0;
+    this.noseOffsetPercent = this.isMobile ? 0.32 : 0.35;
 
-    this.turnThreshold = this.isMobile ? 3.2 : 7.0;
+    this.turnThreshold = this.isMobile ? 4.5 : 7.0;
     this.zMinDiff = this.isMobile ? 0.08 : 0.15;
-    this.noseOffsetPercent = this.isMobile ? 0.25 : 0.35;
+    this.noseOffsetPercent = this.isMobile ? 0.32 : 0.35;
     this.blinkGapMovement = this.isMobile ? 0.25 : 0.12;
     this.blinkGapZ = this.isMobile ? 0.15 : 0.08;
   }
