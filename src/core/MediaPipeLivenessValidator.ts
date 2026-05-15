@@ -8,6 +8,7 @@ export enum LivenessStatus {
 
 interface LivenessValidatorConfig {
   mirrored?: boolean;
+  isMobile?: boolean;
   faceSize?: {
     min: number;
     max: number;
@@ -23,16 +24,31 @@ export class MediaPipeLivenessValidator {
   private mirrored: boolean;
   private faceSizeMin: number;
   private faceSizeMax: number;
+  private turnThreshold: number;
+  private zMinDiff: number;
+  private noseOffsetPercent: number;
+  private blinkGapMovement: number;
+  private blinkGapZ: number;
+  private isMobile: boolean;
 
   private lastNosePos: { x: number; y: number } | null = null;
   private lastNoseZ: number | null = null;
 
   constructor(config: LivenessValidatorConfig = {}) {
     this.mirrored = config.mirrored ?? true;
-    // invites: 0.25–0.4 funciona bem
-    // totem: câmera mais distante → thresholds menores
-    this.faceSizeMin = config.faceSize?.min ?? 0.25;
-    this.faceSizeMax = config.faceSize?.max ?? 0.4;
+
+    this.isMobile = config.isMobile ?? false;
+
+    // faceSize: config explícito tem prioridade, senão usa o default por plataforma
+    this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.13 : 0.25);
+    this.faceSizeMax = config.faceSize?.max ?? (this.isMobile ? 0.28 : 0.4);
+
+    // Thresholds internos por plataforma
+    this.turnThreshold = this.isMobile ? 2.2 : 7.0;
+    this.zMinDiff = this.isMobile ? 0.08 : 0.15;
+    this.noseOffsetPercent = this.isMobile ? 0.18 : 0.35;
+    this.blinkGapMovement = this.isMobile ? 0.25 : 0.12;
+    this.blinkGapZ = this.isMobile ? 0.15 : 0.08;
   }
 
   private getDistance(p1: any, p2: any) {
@@ -46,10 +62,8 @@ export class MediaPipeLivenessValidator {
       const movement = this.getDistance(this.lastNosePos, nose);
       const zMovement = Math.abs(this.lastNoseZ - nose.z);
 
-      // Se o nariz pulou no plano XY OU se a profundidade mudou bruscamente
-      // Colocar um celular na frente da cara causa um pulo enorme no Z
-      if (movement > 0.12 || zMovement > 0.08) {
-        this.reset(); // Reset total se houver troca de objeto
+      if (movement > this.blinkGapMovement || zMovement > this.blinkGapZ) {
+        this.reset();
         return true;
       }
     }
@@ -255,44 +269,32 @@ export class MediaPipeLivenessValidator {
     const leftEdge = landmarks[234];
     const rightEdge = landmarks[454];
 
-    // Cálculo de distâncias horizontais
     const distLeft = this.getDistance(nose, leftEdge);
     const distRight = this.getDistance(nose, rightEdge);
     const ratio = distLeft / distRight;
 
-    // --- CONFIGURAÇÃO DE RIGOR ---
-    const TURN_THRESHOLD = 7.0; // Nariz quase na orelha
-    const Z_MIN_DIFF = 0.15; // Profundidade acentuada
-    const NOSE_OFFSET_PERCENT = 0.35; // Nariz deve mover 35% da largura total do rosto
-    // -----------------------------
-
-    // 1. Verificação do Ratio
     const isLookingLeft = this.mirrored
-      ? ratio > TURN_THRESHOLD
-      : ratio < 1 / TURN_THRESHOLD;
+      ? ratio > this.turnThreshold
+      : ratio < 1 / this.turnThreshold;
     const isLookingRight = this.mirrored
-      ? ratio < 1 / TURN_THRESHOLD
-      : ratio > TURN_THRESHOLD;
+      ? ratio < 1 / this.turnThreshold
+      : ratio > this.turnThreshold;
     const turnThresholdOk =
       direction === "left" ? isLookingLeft : isLookingRight;
 
-    // 2. Verificação de Profundidade (Z-Shift)
     const zDiff = landmarks[234].z - landmarks[454].z;
     const zMovementOk =
       direction === "left"
         ? this.mirrored
-          ? zDiff < -Z_MIN_DIFF
-          : zDiff > Z_MIN_DIFF
+          ? zDiff < -this.zMinDiff
+          : zDiff > this.zMinDiff
         : this.mirrored
-          ? zDiff > Z_MIN_DIFF
-          : zDiff < -Z_MIN_DIFF;
+          ? zDiff > this.zMinDiff
+          : zDiff < -this.zMinDiff;
 
-    // 3. Deslocamento do Nariz (Normalizado pela largura do rosto)
     const faceWidth = Math.abs(rightEdge.x - leftEdge.x);
     const faceCenterX = (leftEdge.x + rightEdge.x) / 2;
     const noseOffset = nose.x - faceCenterX;
-
-    // Calculamos quanto o nariz moveu proporcionalmente ao tamanho do rosto
     const relativeNoseOffset = Math.abs(noseOffset) / faceWidth;
 
     const noseDirectionOk =
@@ -305,14 +307,15 @@ export class MediaPipeLivenessValidator {
           : noseOffset > 0;
 
     const noseMovementOk =
-      relativeNoseOffset > NOSE_OFFSET_PERCENT && noseDirectionOk;
+      relativeNoseOffset > this.noseOffsetPercent && noseDirectionOk;
 
-    return (
-      turnThresholdOk &&
-      zMovementOk &&
-      noseMovementOk &&
-      this.is3DFace(landmarks)
-    );
+    // Mobile: Z menos confiável, então OR com is3DFace
+    // Desktop: mantém o AND original (mais rigoroso)
+    const depthOk = this.isMobile
+      ? zMovementOk || this.is3DFace(landmarks)
+      : zMovementOk && this.is3DFace(landmarks);
+
+    return turnThresholdOk && noseMovementOk && depthOk;
   }
 
   private validateBase(landmarks: any[]) {
