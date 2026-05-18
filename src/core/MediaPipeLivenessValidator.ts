@@ -341,7 +341,8 @@ export class MediaPipeLivenessValidator {
   private processLiveness(landmarks: any[]) {
     if (!this.sequence.length) this.generateSequence();
 
-    if (this.detectBlinkGap(landmarks)) return LivenessStatus.CENTER_FACE;
+    if (this.stepIndex === 0 && this.detectBlinkGap(landmarks))
+      return LivenessStatus.CENTER_FACE;
 
     // Se em algum momento o objeto deixar de ser 3D (ex: botou a foto no meio do giro)
     if (!this.is3DFace(landmarks)) {
@@ -366,9 +367,11 @@ export class MediaPipeLivenessValidator {
   }
 
   private checkGeometricRules(landmarks: any[], isMoving: boolean) {
-    if (!this.isFaceCentered(landmarks))
+    // Durante movimento, não exige centralização
+    if (!isMoving && !this.isFaceCentered(landmarks))
       return { isValid: false, feedback: "alignYourFaceCircle" };
 
+    // resto das checagens só fora do movimento
     if (!isMoving) {
       const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
       if (distanceFeedback === "closer")
