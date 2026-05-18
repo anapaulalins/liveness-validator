@@ -537,11 +537,12 @@ export class MediaPipeLivenessValidator {
     this.mirrored = config.mirrored ?? true;
     this.isMobile = config.isMobile ?? false;
 
-    this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.2 : 0.22);
-    this.faceSizeMax = config.faceSize?.max ?? 0.6;
+    // this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.2 : 0.22);
+    // this.faceSizeMax = config.faceSize?.max ?? 0.6;
+    this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.2 : 0.25);
+    this.faceSizeMax = config.faceSize?.max ?? (this.isMobile ? 0.4 : 0.4);
 
-    // ── turn thresholds (more permissive than before) ──────────────────────
-    this.turnThreshold = this.isMobile ? 3.0 : 3.5;
+    this.turnThreshold = this.isMobile ? 4.0 : 4.5;
     this.noseOffsetPercent = this.isMobile ? 0.22 : 0.25;
     this.zMinDiff = this.isMobile ? 0.06 : 0.1;
 
