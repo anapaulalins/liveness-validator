@@ -42,9 +42,9 @@ export class MediaPipeLivenessValidator {
     this.faceSizeMin = config.faceSize?.min ?? (this.isMobile ? 0.2 : 0.25);
     this.faceSizeMax = config.faceSize?.max ?? (this.isMobile ? 0.4 : 0.4);
 
-    this.turnThreshold = this.isMobile ? 4.5 : 9.0;
+    this.turnThreshold = this.isMobile ? 4.5 : 7.0;
     this.zMinDiff = this.isMobile ? 0.08 : 0.15;
-    this.noseOffsetPercent = this.isMobile ? 0.32 : 0.42;
+    this.noseOffsetPercent = this.isMobile ? 0.32 : 0.35;
     this.blinkGapMovement = this.isMobile ? 0.25 : 0.12;
     this.blinkGapZ = this.isMobile ? 0.15 : 0.08;
   }
