@@ -34,8 +34,6 @@ export class MediaPipeLivenessValidator {
   private lastNosePos: { x: number; y: number } | null = null;
   private lastNoseZ: number | null = null;
 
-  private isBaseValidated = false;
-
   constructor(config: LivenessValidatorConfig = {}) {
     this.mirrored = config.mirrored ?? true;
 
@@ -340,35 +338,18 @@ export class MediaPipeLivenessValidator {
     return this.handleStabilization();
   }
 
-  // private processLiveness(landmarks: any[]) {
-  //   if (!this.sequence.length) this.generateSequence();
-
-  //   if (this.stepIndex === 0 && this.detectBlinkGap(landmarks))
-  //     return LivenessStatus.CENTER_FACE;
-
-  //   // Se em algum momento o objeto deixar de ser 3D (ex: botou a foto no meio do giro)
-  //   if (!this.is3DFace(landmarks)) {
-  //     this.stepIndex = 0; // Opcional: penaliza voltando o desafio do zero
-  //     return LivenessStatus.CENTER_FACE;
-  //   }
-
-  //   if (this.stepIndex >= this.sequence.length) {
-  //     return this.isHeadFacingForward(landmarks)
-  //       ? LivenessStatus.SUCCESS
-  //       : LivenessStatus.RETURN_CENTER;
-  //   }
-
-  //   const currentDirection = this.sequence[this.stepIndex];
-  //   if (this.isHeadTurned(landmarks, currentDirection)) {
-  //     this.stepIndex++;
-  //   }
-
-  //   return currentDirection === "left"
-  //     ? LivenessStatus.TURN_LEFT
-  //     : LivenessStatus.TURN_RIGHT;
-  // }
-
   private processLiveness(landmarks: any[]) {
+    if (!this.sequence.length) this.generateSequence();
+
+    if (this.stepIndex === 0 && this.detectBlinkGap(landmarks))
+      return LivenessStatus.CENTER_FACE;
+
+    // Se em algum momento o objeto deixar de ser 3D (ex: botou a foto no meio do giro)
+    if (!this.is3DFace(landmarks)) {
+      this.stepIndex = 0; // Opcional: penaliza voltando o desafio do zero
+      return LivenessStatus.CENTER_FACE;
+    }
+
     if (this.stepIndex >= this.sequence.length) {
       return this.isHeadFacingForward(landmarks)
         ? LivenessStatus.SUCCESS
@@ -385,141 +366,62 @@ export class MediaPipeLivenessValidator {
       : LivenessStatus.TURN_RIGHT;
   }
 
-  // private checkGeometricRules(landmarks: any[], isMoving: boolean) {
-  //   // Durante movimento, não exige centralização
-  //   if (!isMoving && !this.isFaceCentered(landmarks))
-  //     return { isValid: false, feedback: "alignYourFaceCircle" };
-
-  //   // resto das checagens só fora do movimento
-  //   if (!isMoving) {
-  //     const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
-  //     if (distanceFeedback === "closer")
-  //       return { isValid: false, feedback: "moveCloser" };
-  //     if (distanceFeedback === "farther")
-  //       return { isValid: false, feedback: "moveFarther" };
-
-  //     if (!this.isHeadFacingForward(landmarks))
-  //       return { isValid: false, feedback: "dontTiltDown" };
-  //     if (this.isFaceTiltedDown(landmarks))
-  //       return { isValid: false, feedback: "dontTiltDown" };
-  //   }
-
-  //   return { isValid: true, feedback: "ok" };
-  // }
-
   private checkGeometricRules(landmarks: any[], isMoving: boolean) {
-    if (!this.isFaceCentered(landmarks))
+    // Durante movimento, não exige centralização
+    if (!isMoving && !this.isFaceCentered(landmarks))
       return { isValid: false, feedback: "alignYourFaceCircle" };
 
-    const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
-    if (distanceFeedback === "closer")
-      return { isValid: false, feedback: "moveCloser" };
-    if (distanceFeedback === "farther")
-      return { isValid: false, feedback: "moveFarther" };
+    // resto das checagens só fora do movimento
+    if (!isMoving) {
+      const distanceFeedback = this.getFaceDistanceFeedback(landmarks);
+      if (distanceFeedback === "closer")
+        return { isValid: false, feedback: "moveCloser" };
+      if (distanceFeedback === "farther")
+        return { isValid: false, feedback: "moveFarther" };
 
-    if (!this.isHeadFacingForward(landmarks))
-      return { isValid: false, feedback: "dontTiltDown" };
-    if (this.isFaceTiltedDown(landmarks))
-      return { isValid: false, feedback: "dontTiltDown" };
+      if (!this.isHeadFacingForward(landmarks))
+        return { isValid: false, feedback: "dontTiltDown" };
+      if (this.isFaceTiltedDown(landmarks))
+        return { isValid: false, feedback: "dontTiltDown" };
+    }
 
     return { isValid: true, feedback: "ok" };
   }
-
-  // validate(
-  //   landmarks: any[],
-  //   faceLivenessEnabled: boolean,
-  //   blendshapes?: any[],
-  // ) {
-  //   if (!faceLivenessEnabled) return this.validateBase(landmarks);
-
-  //   const status = this.processLiveness(landmarks);
-
-  //   const isMoving =
-  //     status === LivenessStatus.TURN_LEFT ||
-  //     status === LivenessStatus.TURN_RIGHT ||
-  //     status === LivenessStatus.RETURN_CENTER;
-
-  //   if (status !== LivenessStatus.SUCCESS) {
-  //     this.successTimestamp = null;
-
-  //     const geometry = this.checkGeometricRules(landmarks, isMoving);
-  //     if (!geometry.isValid) return geometry;
-
-  //     const feedbackMessages = {
-  //       [LivenessStatus.CENTER_FACE]: "alignYourFaceCircle",
-  //       [LivenessStatus.TURN_LEFT]: "turn.left",
-  //       [LivenessStatus.TURN_RIGHT]: "turn.right",
-  //       [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle",
-  //     };
-
-  //     return {
-  //       isValid: false,
-  //       feedback: feedbackMessages[status as keyof typeof feedbackMessages],
-  //     };
-  //   }
-
-  //   return this.validateBase(landmarks);
-  // }
 
   validate(
     landmarks: any[],
     faceLivenessEnabled: boolean,
     blendshapes?: any[],
   ) {
-    // Sem liveness: fluxo original
     if (!faceLivenessEnabled) return this.validateBase(landmarks);
 
-    // ── FASE 1: centralização ──────────────────────────────────────
-    // Enquanto a base não for validada, só roda checkGeometricRules + is3DFace
-    if (!this.isBaseValidated) {
-      const rules = this.checkGeometricRules(landmarks, false);
-      if (!rules.isValid) {
-        this.successTimestamp = null;
-        return rules;
-      }
-
-      if (!this.is3DFace(landmarks)) {
-        this.successTimestamp = null;
-        return { isValid: false, feedback: "alignYourFaceCircle" };
-      }
-
-      // Estabilização antes de liberar fase 2
-      const stabilized = this.handleStabilization();
-      if (!stabilized.isValid) return stabilized;
-
-      // ✅ Fase 1 aprovada — inicia fase 2
-      this.isBaseValidated = true;
-      this.successTimestamp = null; // reseta para o stabilization do SUCCESS não acumular
-      this.generateSequence();
-    }
-
-    // ── FASE 2: liveness ──────────────────────────────────────────
-    // Aqui NÃO checa centralização. Só verifica 3D para anti-spoofing.
     const status = this.processLiveness(landmarks);
 
-    if (status === LivenessStatus.SUCCESS) {
-      // Liveness concluído: faz validateBase final para captura
-      return this.validateBase(landmarks);
+    const isMoving =
+      status === LivenessStatus.TURN_LEFT ||
+      status === LivenessStatus.TURN_RIGHT ||
+      status === LivenessStatus.RETURN_CENTER;
+
+    if (status !== LivenessStatus.SUCCESS) {
+      this.successTimestamp = null;
+
+      const geometry = this.checkGeometricRules(landmarks, isMoving);
+      if (!geometry.isValid) return geometry;
+
+      const feedbackMessages = {
+        [LivenessStatus.CENTER_FACE]: "alignYourFaceCircle",
+        [LivenessStatus.TURN_LEFT]: "turn.left",
+        [LivenessStatus.TURN_RIGHT]: "turn.right",
+        [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle",
+      };
+
+      return {
+        isValid: false,
+        feedback: feedbackMessages[status as keyof typeof feedbackMessages],
+      };
     }
 
-    // Durante os giros: só bloqueia se deixar de ser 3D
-    if (!this.is3DFace(landmarks)) {
-      this.isBaseValidated = false; // volta para fase 1
-      this.stepIndex = 0;
-      return { isValid: false, feedback: "alignYourFaceCircle" };
-    }
-
-    const feedbackMessages: Record<string, string> = {
-      [LivenessStatus.CENTER_FACE]: "alignYourFaceCircle",
-      [LivenessStatus.TURN_LEFT]: "turn.left",
-      [LivenessStatus.TURN_RIGHT]: "turn.right",
-      [LivenessStatus.RETURN_CENTER]: "alignYourFaceCircle",
-    };
-
-    return {
-      isValid: false,
-      feedback: feedbackMessages[status] ?? "alignYourFaceCircle",
-    };
+    return this.validateBase(landmarks);
   }
 
   private is3DFace(landmarks: any[]): boolean {
@@ -552,7 +454,6 @@ export class MediaPipeLivenessValidator {
   reset() {
     this.successTimestamp = null;
     this.stepIndex = 0;
-    this.isBaseValidated = false;
     this.lastNosePos = null;
     this.lastNoseZ = null;
     this.generateSequence();
